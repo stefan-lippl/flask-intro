@@ -38,7 +38,7 @@ def verify_password(username, password):
         return False
 
 
-def chash_with_user(username):
+def cash_with_user(username):
     return users.find({"username": username})[0]["own_money"]
 
 
@@ -114,18 +114,114 @@ class Add(Resource):
         if money <= 0:
             return set_status_code(304, "Money amount must be >0")
 
-        cash = chash_with_user(username)
+        cash = cash_with_user(username)
         money -= 1
-        bank_cash = chash_with_user("BANK")
+        bank_cash = cash_with_user("BANK")
         update_account(username, cash+money)
         update_account("BANK", bank_cash+1)
 
         return set_status_code(200, "Cash successfully added to account.")
 
 
+class Transfer(Resource):
+    def post(self):
+        posted_data = request.get_json()
+        username = posted_data["username"]
+        password = posted_data["password"]
+        reciever = posted_data["reciever"]
+        money = posted_data["amount"]
+
+        ret_json, error = verify_credentials(username, password)
+        if error:
+            return ret_json
+
+        cash = cash_with_user(username)
+        if cash <= 0:
+            return set_status_code(304, "Out of money")
+
+        if not user_exists(reciever):
+            return set_status_code(301, "Invalid reciever username")
+
+        cash_from = cash_with_user(username)
+        cash_to = cash_with_user(reciever)
+        bank_cash = cash_with_user("BANK")
+
+        update_account("BANK", bank_cash + 1)
+        update_account(reciever, cash_to + money - 1)
+        update_account(username, cash_from - money)
+
+        return set_status_code(200, "Amount successfully transfered")
+
+
+class Balance(Resource):
+    def post(self):
+        posted_data = request.get_json()
+        username = posted_data["username"]
+        password = posted_data["password"]
+
+        ret_json, error = verify_credentials(username, password)
+        if error:
+            return ret_json
+
+        return jsonify({
+            "username": username
+        }, {
+            "_id": 0,
+            "password": 0,
+
+        })[0]
+
+
+class TakeLoan(Resource):
+    def post(self):
+        posted_data = request.get_json()
+        username = posted_data["username"]
+        password = posted_data["password"]
+        money = posted_data["amount"]
+
+        ret_json, error = verify_credentials(username, password)
+        if error:
+            return ret_json
+
+        cash = cash_with_user(username)
+        debt = debt_with_user(username)
+
+        update_account(username, cash + money)
+        update_account(username, debt + money)
+
+        return set_status_code(200, "Loan added successful to account")
+
+
+class PayLoan(Resource):
+    def post(self):
+        posted_data = request.get_json()
+        username = posted_data["username"]
+        password = posted_data["password"]
+        money = posted_data["amount"]
+
+        ret_json, error = verify_credentials(username, password)
+        if error:
+            return ret_json
+
+        cash = cash_with_user(username)
+        if cash <= 0:
+            return set_status_code(303, "Not enough money")
+
+        debt = debt_with_user(username)
+
+        update_account(username, cash - money)
+        update_account(username, debt - money)
+
+        return set_status_code(200, "Loan successful paid")
+
+
 api.add_resource(Resource, "/register")
 api.add_resource(Add, "/add")
+api.add_resource(Transfer, "/transfer")
+api.add_resource(Balance, "/balance")
+api.add_resource(TakeLoan, "/takeloan")
+api.add_resource(PayLoan, "/payloan")
 
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', debug=True)
+    app.run(host='0.0.0.0', debug=True, port=5000)
